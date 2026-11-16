@@ -6,28 +6,27 @@ from mysite.config import AUTH_SERVICE_URL
 async def verify_access_token(token: str):
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(url=f'{AUTH_SERVICE_URL}/auth/verify/',
-                                         headers={'Authorization': f'Bearer {token}'})
+            response = await client.get(
+                url=f'{AUTH_SERVICE_URL}/auth/verify/',
+                headers={'Authorization': f'Bearer {token}'}
+            )
     except httpx.RequestError:
-        raise HTTPException(status_code=500, detail='Auth Service недоступен')
-
+        raise HTTPException(status_code=503, detail='Auth Service недоступен')
 
     if response.status_code == 401:
         raise HTTPException(status_code=401, detail='Access token неправильный или просрочен')
 
-
     if response.status_code != 200:
-        raise HTTPException(status_code=503, detail='Ошибка')
-
+        raise HTTPException(status_code=503, detail='Ошибка auth-сервиса')
 
     try:
         user_data = response.json()
 
         return {
-            "id": int(user_data['id']),
-            "username": user_data['username'],
-            'is_official': user_data['is_official'],
+            'id': int(user_data['id']),
+            'username': user_data['username'],
+            'status': user_data['status'],
         }
 
-    except (KeyError, TypeError, ValueError):
-        raise HTTPException(status_code=500, detail='Неправильные данные')
+    except (KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f'Неправильные данные: {e!r}')

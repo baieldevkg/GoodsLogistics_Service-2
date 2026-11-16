@@ -1,11 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Annotated
 from mysite.database.models import Courier
-from mysite.schemas.courier_schema import CourierInputSchema, CourierOutputSchema
+from mysite.schemas.courier_schema import (
+    CourierInputSchema, CourierUpdateSchema, CourierOutputSchema, CourierCreateSchema
+)
 from mysite.database.db import SessionLocal
+from .dependencies import get_current_user
 
 courier_router = APIRouter(prefix='/courier', tags=['Courier Crud'])
+
 
 async def get_db():
     db = SessionLocal()
@@ -14,11 +18,37 @@ async def get_db():
     finally:
         db.close()
 
+
 @courier_router.post('/', response_model=CourierOutputSchema)
-async def create_courier(courier: CourierInputSchema, db: Session = Depends(get_db)):
-    courier_db = Courier(**courier.model_dump())
-    db.add(courier_db)
-    db.commit()
+async def create_courier(courier: CourierInputSchema,
+                         current_user: Annotated[dict, Depends(get_current_user)],
+                         db: Session = Depends(get_db)):
+    courier_db = Courier(**courier.model_dump(), user_id=current_user['id'])
+
+    try:
+        db.add(courier_db)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(detail=repr(e), status_code=400)
+
+    db.refresh(courier_db)
+    return courier_db
+
+
+@courier_router.post('/create/', response_model=CourierOutputSchema)
+async def courier_create(courier: CourierCreateSchema,
+                         current_user: Annotated[dict, Depends(get_current_user)],
+                         db: Session = Depends(get_db)):
+    courier_db = Courier(**courier.model_dump(), user_id=current_user['id'])
+
+    try:
+        db.add(courier_db)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(detail=repr(e), status_code=400)
+
     db.refresh(courier_db)
     return courier_db
 
@@ -37,13 +67,13 @@ async def detail_courier(courier_id: int, db: Session = Depends(get_db)):
 
 
 @courier_router.put('/{courier_id}/', response_model=dict)
-async def update_courier(courier_id: int, courier: CourierInputSchema,
+async def update_courier(courier_id: int, courier: CourierUpdateSchema,
                          db: Session = Depends(get_db)):
     courier_db = db.query(Courier).filter(Courier.id == courier_id).first()
     if not courier_db:
         raise HTTPException(detail='Мындай курьер жок', status_code=404)
 
-    for key, value in courier.model_dump().items():
+    for key, value in courier.model_dump(exclude_unset=True).items():
         setattr(courier_db, key, value)
 
     db.commit()
